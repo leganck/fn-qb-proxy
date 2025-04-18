@@ -1,0 +1,22 @@
+name: fn-qb-proxy
+services:
+  qb:
+    image: ghcr.io/leganck/fn-qb-proxy
+    container_name: fn-qb-proxy
+#    labels:
+#      - traefik.http.services.qb.loadbalancer.server.port=18080
+    environment:
+      - PASSWORD=admin
+    ports:
+      - 18080:18080
+    volumes:
+      - /home/admin/qbt.sock:/app/qbt.sock
+      - /home/admin/qb-pwd:/app/qb-pwd
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    restart: always
+
+networks:
+  default:
+    name: gateway
+    external: true
