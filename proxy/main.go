@@ -89,7 +89,7 @@ func proxyCmd(ctx *cli.Context) error {
 
 	log.Printf("proxy running on port %d\n", port)
 
-	proxy := proxy(debug, uds, password, expectedPassword)
+	proxy := proxy(debug, uds, func() string { return password }, expectedPassword)
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: &proxy,
@@ -104,7 +104,7 @@ func proxyCmd(ctx *cli.Context) error {
 	return nil
 }
 
-func proxy(debug bool, uds string, password string, expectedPassword string) httputil.ReverseProxy {
+func proxy(debug bool, uds string, password func() string, expectedPassword string) httputil.ReverseProxy {
 	debugPrint := func(format string, args ...any) {
 
 		if debug {
@@ -127,7 +127,7 @@ func proxy(debug bool, uds string, password string, expectedPassword string) htt
 			body, _ := io.ReadAll(r.In.Body)
 			r.In.ParseForm()
 			if strings.Contains(r.In.URL.Path, loginAPIPath) {
-				outPassword := password
+				outPassword := password()
 				if expectedPassword != "" {
 					parts := strings.Split(string(body), "&")
 					debugPrint("parts: %v\n", parts)
