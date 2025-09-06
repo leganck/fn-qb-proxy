@@ -18,17 +18,6 @@ before:
 builds:
   - env:
       - CGO_ENABLED=0
-    main: "./pwd/main.go"
-    binary: fn-qb-pwd
-    id: fn-qb-pwd
-    goos:
-      - linux
-    goarch:
-      - amd64
-    ldflags:
-      - -s -w -X main.version={{.Tag}} -X main.buildTime={{.Date}}
-  - env:
-      - CGO_ENABLED=0
     main: "./proxy/main.go"
     binary: fn-qb-proxy
     id: fn-qb-proxy
@@ -38,25 +27,19 @@ builds:
       - amd64
     ldflags:
       - -s -w -X main.version={{.Tag}} -X main.buildTime={{.Date}}
+  - env:
+      - CGO_ENABLED=0
+    main: "./http/main.go"
+    binary: fn-qb-http
+    id: fn-qb-http
+    goos:
+      - linux
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w -X main.version={{.Tag}} -X main.buildTime={{.Date}}
 
 archives:
-  - formats: [ tar.gz ]
-    id: fn-qb-pwd
-    ids:
-      - fn-qb-pwd
-    # this name template makes the OS and Arch compatible with the results of `uname`.
-    name_template: >-
-      {{ .Binary}}_
-      {{- title .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
-      {{- else }}{{ .Arch }}{{ end }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
-    # use zip for windows archives
-    format_overrides:
-      - goos: windows
-        formats: [ zip ]
-
   - formats: [ tar.gz ]
     id: fn-qb-proxy
     ids:
@@ -73,12 +56,29 @@ archives:
     format_overrides:
       - goos: windows
         formats: [ zip ]
+
+  - formats: [ tar.gz ]
+    id: fn-qb-http
+    ids:
+      - fn-qb-http
+    # this name template makes the OS and Arch compatible with the results of `uname`.
+    name_template: >-
+      {{ .Binary}}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    # use zip for windows archives
+    format_overrides:
+      - goos: windows
+        formats: [ zip ]
 dockers:
-  - id: fn-qb-proxy
+  - id: fn-qb-http
     goos: linux
     goarch: amd64
     image_templates:
-      - "ghcr.io/leganck/fn-qb-proxy:latest"
+      - "ghcr.io/leganck/fn-qb-http:latest"
 
 changelog:
   sort: asc

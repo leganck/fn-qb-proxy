@@ -1,201 +1,105 @@
 package main
 
 import (
-	"bytes"
-	"context"
-	"fmt"
-	"io"
-	"log"
-	"net"
-	"net/http"
-	"net/http/httputil"
 	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
 
+	"github.com/leganck/fn-qb-proxy/sigctx"
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
 
-const (
-	pwFile        = "/home/admin/qb-pwd"
-	qbtSocketPath = "/home/admin/qbt.sock"
-	loginAPIPath  = "/api/v2/auth/login"
-)
+const SOCKET_SUBDIR = "socket-subdir"
+const DEBUG = "debug"
 
-func watchQbPassword(ctx context.Context, updatePwd func(string), filePath string) {
+var socketSubDir string
 
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Printf("watchQbPassword stopped by context: %v", ctx.Err())
-			return
-		case <-ticker.C:
-			content, err := os.ReadFile(filePath)
-			if err != nil {
-				// 区分文件不存在和临时性错误
-				if os.IsNotExist(err) {
-					log.Printf("File does not exist: %v", filePath)
-					continue
-				}
-				log.Printf("Error reading file (%v): %v", filePath, err)
-				continue
-			}
-
-			if len(content) > 0 {
-				newPwd := string(content)
-				updatePwd(newPwd)
-			}
-		}
-	}
-}
-
-func watchForShutdown() context.Context {
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	go func() {
-		<-signalChan
-		cancelFunc()
-	}()
-	return ctx
-}
-func proxyCmd(ctx *cli.Context) error {
-	uds := ctx.String("uds")
-	port := ctx.Int("port")
-	expectedPassword := ctx.String("password")
-	passwdFile := ctx.String("pf")
-	debug := ctx.Bool("debug")
-
-	// 校验输入参数
-	if uds == "" || passwdFile == "" {
-		return fmt.Errorf("missing required parameters: uds=%q, passwdFile=%q", uds, passwdFile)
+// 处理 Unix Socket 连接
+func proxySocket(ctlCtx *cli.Context) error {
+	// 根据flag设置日志级别
+	if ctlCtx.Bool(DEBUG) {
+		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	cancelCtx := watchForShutdown()
-
-	password := ""
-	// 安全地更新密码
-	go watchQbPassword(cancelCtx, func(newPassword string) {
-		if newPassword != password {
-			password = newPassword
-			log.Printf("password updated: %s", newPassword)
-		}
-	}, passwdFile)
-
-	log.Printf("proxy running on port %d\n", port)
-
-	proxy := proxy(debug, uds, func() string { return password }, expectedPassword)
-	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: &proxy,
-		BaseContext: func(listener net.Listener) context.Context {
-			return cancelCtx
-		},
+	socketSubDir = ctlCtx.String(SOCKET_SUBDIR)
+	if socketSubDir != "" {
+		logrus.Infof("Socket subdirectory enabled: %s", socketSubDir)
 	}
-	err := server.ListenAndServe()
-	if err != nil {
-		return fmt.Errorf("listen and serve: %w", err)
-	}
-	return nil
-}
+	// 创建带取消功能的上下文来处理终止信号
+	ctx, cancel := sigctx.SignalContext()
+	defer cancel()
 
-func proxy(debug bool, uds string, password func() string, expectedPassword string) httputil.ReverseProxy {
-	debugPrint := func(format string, args ...any) {
+	// 启动查找qb密码的goroutine
+	go findQbUser(ctx)
 
-		if debug {
-			log.Printf(format, args...)
-		}
-	}
-
-	proxy := httputil.ReverseProxy{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return net.Dial("unix", uds)
-			},
-		},
-		Rewrite: func(r *httputil.ProxyRequest) {
-			debugPrint("request: %v\n", r.In.URL.Path)
-			r.Out.URL.Scheme = "http"
-			r.Out.URL.Host = fmt.Sprintf("file://%s", uds)
-			r.Out.Host = fmt.Sprintf("file://%s", uds)
-
-			body, _ := io.ReadAll(r.In.Body)
-			r.In.ParseForm()
-			if strings.Contains(r.In.URL.Path, loginAPIPath) {
-				outPassword := password()
-				if expectedPassword != "" {
-					parts := strings.Split(string(body), "&")
-					debugPrint("parts: %v\n", parts)
-					for _, part := range parts {
-						if strings.HasPrefix(part, "password=") {
-							inputPassword := strings.TrimPrefix(part, "password=")
-							if inputPassword != expectedPassword {
-								outPassword = ""
-								break
-							}
-						}
-					}
-				}
-
-				body = []byte(fmt.Sprintf("username=admin&password=%s", outPassword))
-				r.Out.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
-				r.Out.ContentLength = int64(len(body))
-			}
-			r.Out.Header.Del("Referer")
-			r.Out.Header.Del("Origin")
-			r.Out.Body = io.NopCloser(bytes.NewBuffer(body))
-		},
-	}
-	return proxy
+	// 启动HTTP服务器
+	return startHTTPServer(ctx)
 }
 
 func main() {
+	// 配置logrus为systemd兼容格式：无颜色、ISO 8601时间戳
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp:   true,
+		TimestampFormat: "2006-01-02T15:04:05Z07:00", // ISO 8601标准时间格式
+		ForceColors:     false,                       // 禁用颜色输出（systemd日志不需要）
+		DisableQuote:    true,                        // 禁用字符串自动加引号
+	})
+	logrus.SetLevel(logrus.InfoLevel)
+
 	app := &cli.App{
 		Name:   "fn-qb-proxy",
-		Usage:  "fn-qb-proxy is a proxy for qBittorrent in fnOS",
-		Action: proxyCmd,
+		Usage:  "fn-qb-proxy is a find proxy for qBittorrent in fnOS",
+		Action: proxySocket,
 		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:    "pf",
-				Usage:   "if not set, any pwd will be accepted",
-				Value:   pwFile,
-				EnvVars: []string{"PWD-FILE"},
-			},
-			&cli.StringFlag{
-				Name:    "uds",
-				Usage:   "qBittorrent unix domain socket(uds) path",
-				Value:   qbtSocketPath,
-				EnvVars: []string{"UDS"},
-			},
 			&cli.BoolFlag{
-				Name:    "debug",
+				Name:    DEBUG,
+				Usage:   "enable debug logging",
 				Aliases: []string{"d"},
-				Value:   false,
-				EnvVars: []string{"DEBUG"},
-			},
-			&cli.IntFlag{
-				Name:    "port",
-				Aliases: []string{"p"},
-				Usage:   "proxy running port",
-				Value:   18080,
-				EnvVars: []string{"PORT"},
 			},
 			&cli.StringFlag{
-				Name:    "password",
-				Usage:   "if not set, any password will be accepted",
+				Name:    SOCKET_SUBDIR,
+				Usage:   "Subdirectory to append to socket path (optional)",
 				Value:   "",
-				EnvVars: []string{"PASSWORD"},
+				Aliases: []string{"ss"},
+			},
+		},
+		// 添加service子命令
+		Commands: []*cli.Command{
+			{
+				Name:  "service",
+				Usage: "Manage system service",
+				Subcommands: []*cli.Command{
+					{
+						Name:   "install",
+						Usage:  "Install as systemd service",
+						Action: installService,
+					},
+					{
+						Name:   "uninstall",
+						Usage:  "Uninstall systemd service",
+						Action: uninstallService,
+					},
+					{
+						Name:   "start",
+						Usage:  "Start systemd service",
+						Action: startService,
+					},
+					{
+						Name:   "stop",
+						Usage:  "Stop systemd service",
+						Action: stopService,
+					},
+					{
+						Name:   "restart",
+						Usage:  "Restart systemd service",
+						Action: restartService,
+					},
+				},
 			},
 		},
 	}
 
 	err := app.Run(os.Args)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 	}
 }
