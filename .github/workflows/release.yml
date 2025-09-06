@@ -43,7 +43,7 @@ jobs:
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             echo "command=release --clean" >> $GITHUB_OUTPUT
           else
-            echo "command=build --clean" >> $GITHUB_OUTPUT
+            echo "command=build --clean " >> $GITHUB_OUTPUT
           fi
 
       - name: Run GoReleaser
