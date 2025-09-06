@@ -1,8 +1,8 @@
 FROM scratch
 LABEL authors="leganck"
-COPY  fn-qb-proxy /
+COPY  fn-qb-http /
 ENV  UDS="/app/qbt.sock" \
      PORT=18080 \
-     PASSWORD="admin"\
+     PASSWORD="admin"
 
-CMD ["/fn-qb-proxy"]
+CMD ["/fn-qb-http"]

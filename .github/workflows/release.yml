@@ -4,9 +4,9 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v*'  # 标签推送，如v1.0.0
+      - 'v*'
     branches:
-      - '*'   # 所有分支推送
+      - 'master'
 
 permissions:
   contents: write
@@ -43,7 +43,7 @@ jobs:
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             echo "command=release --clean" >> $GITHUB_OUTPUT
           else
-            echo "command=build --clean" >> $GITHUB_OUTPUT
+            echo "command=build --skip validate --clean " >> $GITHUB_OUTPUT
           fi
 
       - name: Run GoReleaser

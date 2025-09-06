@@ -1,7 +1,7 @@
 name: fn-qb-http
 services:
   qb:
-    image: ghcr.io/leganck/fn-qb-proxy
+    image: ghcr.io/leganck/fn-qb-http
     container_name: fn-qb-http
 #    labels:
 #      - traefik.http.services.qb.loadbalancer.server.port=18080
@@ -10,7 +10,7 @@ services:
     ports:
       - 18080:18080
     volumes:
-      - /home/admin/admin-proxyqbt.sock:/app/qbt.sock
+      - /home/admin/admin-qb-proxy.sock:/app/qbt.sock
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     restart: always
