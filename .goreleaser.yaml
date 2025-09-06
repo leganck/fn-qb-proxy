@@ -74,11 +74,12 @@ archives:
     format_overrides:
       - goos: windows
         formats: [ zip ]
-dockers_v2:
+
+dockers:
   - id: fn-qb-http
-    platforms:
-      - linux/amd64
-    images:
+    goos: linux
+    goarch: amd64
+    image_templates:
       - "ghcr.io/leganck/fn-qb-http:latest"
 
 changelog:
