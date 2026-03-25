@@ -22,7 +22,7 @@ After=dlcenter.service
 
 [Service]
 Type=simple
-ExecStart=%s  -d #可执行文件
+ExecStart=%s   #可执行文件
 Restart=always
 RestartSec=5
 User=root

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/leganck/fn-qb-proxy/sigctx"
@@ -8,10 +9,12 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-const SOCKET_SUBDIR = "socket-subdir"
 const DEBUG = "debug"
+const SOCKET_PERM = "socket-perm"
+const PROXY_SOCKET_DIR = "proxy-socket-dir"
 
-var socketSubDir string
+var socketPerm os.FileMode
+var proxySocketDir string
 
 // 处理 Unix Socket 连接
 func proxySocket(ctlCtx *cli.Context) error {
@@ -20,10 +23,25 @@ func proxySocket(ctlCtx *cli.Context) error {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	socketSubDir = ctlCtx.String(SOCKET_SUBDIR)
-	if socketSubDir != "" {
-		logrus.Infof("Socket subdirectory enabled: %s", socketSubDir)
+	// 设置 socket 权限（默认 0660，用户和组可读写）
+	socketPerm = 0660
+	if customPerm := ctlCtx.String(SOCKET_PERM); customPerm != "" {
+		var perm uint64
+		if _, err := fmt.Sscanf(customPerm, "%o", &perm); err == nil && perm <= 0777 {
+			socketPerm = os.FileMode(perm)
+			logrus.Infof("Custom socket permissions: %04o", socketPerm)
+		} else {
+			logrus.Warnf("Invalid socket-perm value '%s', using default 0660", customPerm)
+		}
 	}
+
+	// 初始化代理 socket 目录
+	proxySocketDir = ctlCtx.String(PROXY_SOCKET_DIR)
+	if err := os.MkdirAll(proxySocketDir, 0755); err != nil {
+		logrus.Fatalf("Failed to create socket directory: %v", err)
+	}
+	logrus.Infof("Proxy socket directory: %s", proxySocketDir)
+
 	// 创建带取消功能的上下文来处理终止信号
 	ctx, cancel := sigctx.SignalContext()
 	defer cancel()
@@ -56,10 +74,17 @@ func main() {
 				Aliases: []string{"d"},
 			},
 			&cli.StringFlag{
-				Name:    SOCKET_SUBDIR,
-				Usage:   "Subdirectory to append to socket path (optional)",
+				Name:    SOCKET_PERM,
+				Usage:   "Socket file permissions in octal format (default: 0660)",
 				Value:   "",
-				Aliases: []string{"ss"},
+				Aliases: []string{"sp"},
+			},
+			&cli.StringFlag{
+				Name:    PROXY_SOCKET_DIR,
+				Usage:   "Directory for storing proxy socket files",
+				Value:   "/run/fn-qb-proxy",
+				Aliases: []string{"psd"},
+				EnvVars: []string{"PROXY_SOCKET_DIR"},
 			},
 		},
 		// 添加service子命令

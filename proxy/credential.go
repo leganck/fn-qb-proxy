@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -16,53 +17,72 @@ type UserCredentials struct {
 	SockPath string // Socket文件位置
 }
 
-var credentials = make(map[string]UserCredentials) // 用户名 -> 凭据信息
+var (
+	credentials = make(map[string]UserCredentials)
+	credsMutex  sync.RWMutex
+)
+
+var (
+	pwdRe  = regexp.MustCompile(`--webui-password=(\S+)`)
+	sockRe = regexp.MustCompile(`--webui-sock-path=(\S+)`)
+)
 
 func doFindQbUser() error {
 	// 使用pgrep查找所有匹配的进程ID
 	pgrepCmd := exec.Command("pgrep", "-f", "qbittorrent-nox")
 	pidOutput, err := pgrepCmd.Output()
 	if err != nil {
-		return fmt.Errorf("qbittorrent-nox process not found: %w", err)
+		// pgrep 找不到进程时返回 exit status 1，这是正常情况
+		// 只有其他错误（如命令不存在）才应该报错
+		if strings.Contains(err.Error(), "exit status 1") {
+			return nil // 进程未找到，不是错误
+		}
+		return fmt.Errorf("pgrep command failed: %w", err)
 	}
 
-	// 分割多个PID（每行一个PID）
 	pids := strings.Fields(string(pidOutput))
 	if len(pids) == 0 {
-		return fmt.Errorf("no qbittorrent-nox process found")
+		return nil // 无进程，正常情况
 	}
 
-	// 保存旧凭据用于比较变更
+	credsMutex.RLock()
 	oldCredentials := make(map[string]UserCredentials)
 	for k, v := range credentials {
 		oldCredentials[k] = v
 	}
+	credsMutex.RUnlock()
 	// 创建新凭据映射
 	newCredentials := make(map[string]UserCredentials)
 	found := false
 
 	// 遍历每个PID查找有效的用户名、密码和Socket路径
 	for _, pid := range pids {
-		// 获取单个进程的完整命令行
+		// 获取用户名
+		userCmd := exec.Command("ps", "-o", "user=", "-p", pid)
+		userOutput, err := userCmd.Output()
+		if err != nil {
+			logrus.Errorf("failed to get user for PID %s: %v", pid, err)
+			continue
+		}
+		username := strings.TrimSpace(string(userOutput))
+		if username == "" {
+			logrus.Warnf("PID %s: empty username", pid)
+			continue
+		}
+
+		// 获取命令行
 		psCmd := exec.Command("ps", "-p", pid, "-o", "command=")
-		output, err := psCmd.Output()
+		psOutput, err := psCmd.Output()
 		if err != nil {
 			logrus.Errorf("failed to get command line for PID %s: %v", pid, err)
 			continue
 		}
-		cmdLine := string(output)
-
-		// 1. 提取用户名（从--profile=/home/用户名/...）
-		userRe := regexp.MustCompile(`--profile=/home/([^/]+)/`)
-		userMatches := userRe.FindStringSubmatch(cmdLine)
-		if len(userMatches) < 2 {
-			logrus.Warnf("PID %s: no valid --profile found (expected /home/username/...)", pid)
+		cmdLine := strings.TrimSpace(string(psOutput))
+		if cmdLine == "" {
+			logrus.Debugf("PID %s: empty command line", pid)
 			continue
 		}
-		username := userMatches[1]
 
-		// 2. 提取密码（--webui-password=xxx）
-		pwdRe := regexp.MustCompile(`--webui-password=(\S+)`)
 		pwdMatches := pwdRe.FindStringSubmatch(cmdLine)
 		if len(pwdMatches) < 2 {
 			logrus.Warnf("PID %s: no --webui-password found", pid)
@@ -70,17 +90,13 @@ func doFindQbUser() error {
 		}
 		pwd := pwdMatches[1]
 
-		// 3. 提取Socket文件位置（--webui-sock-path=xxx）
-		sockRe := regexp.MustCompile(`--webui-sock-path=(\S+)`)
 		sockMatches := sockRe.FindStringSubmatch(cmdLine)
-		sockPath := ""
-		if len(sockMatches) >= 2 {
-			sockPath = sockMatches[1]
-		} else {
+		if len(sockMatches) < 2 {
 			logrus.Warnf("PID %s: no --webui-sock-path found", pid)
+			continue
 		}
+		sockPath := sockMatches[1]
 
-		// 存储用户名、密码和Socket路径对应关系到新凭据映射
 		newCredentials[username] = UserCredentials{
 			Password: pwd,
 			SockPath: sockPath,
@@ -89,25 +105,34 @@ func doFindQbUser() error {
 		found = true
 	}
 
-	// 确定新增和删除的用户并发送事件
-	// 处理已删除的用户
-	for username := range oldCredentials {
-		if _, exists := newCredentials[username]; !exists {
+	for username, oldCred := range oldCredentials {
+		newCred, exists := newCredentials[username]
+		if !exists {
 			logrus.Debugf("User %s removed, sending remove event", username)
-			userEvents <- UserEvent{EventType: "remove", Username: username}
+			sendUserEvent(eventTypeRemove, username)
+		} else if oldCred != newCred {
+			// 检查新的 sock 文件是否存在
+			if _, err := exec.Command("test", "-S", newCred.SockPath).CombinedOutput(); err != nil {
+				logrus.Debugf("User %s credentials changed but new sock %s not ready, only removing", username, newCred.SockPath)
+				sendUserEvent(eventTypeRemove, username)
+			} else {
+				logrus.Debugf("User %s credentials changed, removing and re-adding", username)
+				sendUserEvent(eventTypeRemove, username)
+				sendUserEvent(eventTypeAdd, username)
+			}
 		}
 	}
 
-	// 处理新增的用户
 	for username := range newCredentials {
 		if _, exists := oldCredentials[username]; !exists {
 			logrus.Debugf("User %s added, sending add event", username)
-			userEvents <- UserEvent{EventType: "add", Username: username}
+			sendUserEvent(eventTypeAdd, username)
 		}
 	}
 
-	// 更新凭据
+	credsMutex.Lock()
 	credentials = newCredentials
+	credsMutex.Unlock()
 
 	if !found {
 		return fmt.Errorf("no valid qbittorrent-nox processes with required parameters found")
@@ -120,7 +145,14 @@ func findQbUser(ctx context.Context) {
 
 	// 立即执行一次密码获取
 	if err := doFindQbUser(); err != nil {
-		logrus.Errorf("Failed to fetch qb password: %v", err)
+		logrus.Errorf("Failed to fetch qb credentials: %v", err)
+	} else {
+		credsMutex.RLock()
+		count := len(credentials)
+		credsMutex.RUnlock()
+		if count == 0 {
+			logrus.Info("No qbittorrent-nox processes found (will retry in 5s)")
+		}
 	}
 
 	ticker := time.NewTicker(5 * time.Second)
@@ -130,7 +162,7 @@ func findQbUser(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			if err := doFindQbUser(); err != nil {
-				logrus.Errorf("Failed to fetch qb password: %v", err)
+				logrus.Errorf("Failed to fetch qb credentials: %v", err)
 			}
 		case <-ctx.Done():
 			logrus.Info("Context cancelled, exiting...")
