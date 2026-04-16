@@ -25,6 +25,7 @@ builds:
       - linux
     goarch:
       - amd64
+      - arm64
     ldflags:
       - -s -w -X main.version={{.Tag}} -X main.buildTime={{.Date}}
 
@@ -37,6 +38,7 @@ builds:
       - linux
     goarch:
       - amd64
+      - arm64
     ldflags:
       - -s -w -X main.version={{.Tag}} -X main.buildTime={{.Date}}
 
@@ -76,11 +78,45 @@ archives:
         formats: [ zip ]
 
 dockers:
-  - id: fn-qb-http
+  - id: fn-qb-http-amd64
+    ids:
+      - fn-qb-http
     goos: linux
     goarch: amd64
     image_templates:
-      - "ghcr.io/leganck/fn-qb-http:latest"
+      - "ghcr.io/leganck/fn-qb-http:latest-amd64"
+      - "ghcr.io/leganck/fn-qb-http:{{ .Tag }}-amd64"
+      - "ghcr.io/leganck/fn-qb-http:v{{ .Major }}.{{ .Minor }}-amd64"
+    use: buildx
+    dockerfile: Dockerfile
+
+  - id: fn-qb-http-arm64
+    ids:
+      - fn-qb-http
+    goos: linux
+    goarch: arm64
+    image_templates:
+      - "ghcr.io/leganck/fn-qb-http:latest-arm64"
+      - "ghcr.io/leganck/fn-qb-http:{{ .Tag }}-arm64"
+      - "ghcr.io/leganck/fn-qb-http:v{{ .Major }}.{{ .Minor }}-arm64"
+    use: buildx
+    dockerfile: Dockerfile
+
+docker_manifests:
+  - name_template: "ghcr.io/leganck/fn-qb-http:latest"
+    image_templates:
+      - "ghcr.io/leganck/fn-qb-http:latest-amd64"
+      - "ghcr.io/leganck/fn-qb-http:latest-arm64"
+
+  - name_template: "ghcr.io/leganck/fn-qb-http:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/leganck/fn-qb-http:{{ .Tag }}-amd64"
+      - "ghcr.io/leganck/fn-qb-http:{{ .Tag }}-arm64"
+
+  - name_template: "ghcr.io/leganck/fn-qb-http:v{{ .Major }}.{{ .Minor }}"
+    image_templates:
+      - "ghcr.io/leganck/fn-qb-http:v{{ .Major }}.{{ .Minor }}-amd64"
+      - "ghcr.io/leganck/fn-qb-http:v{{ .Major }}.{{ .Minor }}-arm64"
 
 changelog:
   sort: asc
