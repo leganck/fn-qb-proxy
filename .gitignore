@@ -79,3 +79,6 @@ go.work
 
 # Added by goreleaser init:
 dist/
+
+# Local editor/agent settings
+.claude/

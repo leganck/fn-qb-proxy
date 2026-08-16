@@ -1,0 +1,17 @@
+# 统一行尾：仓库内一律存 LF，检出按各平台 autocrlf 处理
+* text=auto eol=lf
+
+# 显式声明常见文本类型
+*.go       text eol=lf
+*.md       text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.mod      text eol=lf
+*.sum      text eol=lf
+Dockerfile text eol=lf
+
+# 二进制保护（工作目录存在但未跟踪，防止误 add 被 text 规则损坏）
+*.exe  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary

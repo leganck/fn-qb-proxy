@@ -15,32 +15,34 @@
 
 ### 下载与安装
 
-从 [Releases](https://github.com/leganck/fn-qb-proxy/releases) 下载对应架构的压缩包（包含两个二进制文件）：
+从 [Releases](https://github.com/leganck/fn-qb-proxy/releases) 下载对应架构的两个压缩包（fn-qb-proxy 与 fn-qb-http 独立打包，均支持
+Linux amd64 / arm64）：
 
 ```shell
-# 下载并解压
-wget https://github.com/leganck/fn-qb-proxy/releases/download/v0.1.0/fn-qb-proxy_Linux_x86_64.tar.gz && tar -zxvf fn-qb-proxy_Linux_x86_64.tar.gz
+# 下载并解压 fn-qb-proxy
+wget https://github.com/leganck/fn-qb-proxy/releases/download/v0.2.0/fn-qb-proxy_Linux_x86_64.tar.gz && tar -zxvf fn-qb-proxy_Linux_x86_64.tar.gz
 
 # 赋予执行权限
-chmod +x fn-qb-proxy 
+chmod +x fn-qb-proxy
 ```
 
 ```shell
 $ ./fn-qb-proxy -h
 NAME:
-   fn-qb-proxy - Unix socket proxy for qBittorrent with dynamic password detection
+   fn-qb-proxy - fn-qb-proxy is a find proxy for qBittorrent in fnOS
 
 USAGE:
    fn-qb-proxy [global options] command [command options]
 
 COMMANDS:
-   service   Manage systemd service (install/uninstall/start/stop/restart)
+   service   Manage system service
    help, h   Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
-   --debug, -d          enable debug logging (default: false)
-   --socket-subdir value, -ss value  subdirectory to append to socket path (optional)
-   --help, -h           show help
+   --debug, -d                     enable debug logging (default: false)
+   --socket-perm value, -sp value  Socket file permissions in octal format (default: 0660)
+   --proxy-socket-dir value, -psd value  Directory for storing proxy socket files (default: "/run/fn-qb-proxy") [$PROXY_SOCKET_DIR]
+   --help, -h                      show help
 ```
 
 运行后
@@ -49,9 +51,11 @@ GLOBAL OPTIONS:
 # 基本运行（默认配置）
 ./fn-qb-proxy
 
-# 调试模式 + 自定义 socket 子目录
-./fn-qb-proxy -d -ss qb-proxies
+# 调试模式 + 自定义 socket 存放目录
+./fn-qb-proxy -d -psd /run/fn-qb-proxy
 ```
+
+> 提示：`--proxy-socket-dir` 也可通过环境变量 `PROXY_SOCKET_DIR` 指定。
 
 ### 配置系统服务
 
@@ -85,7 +89,7 @@ $ sudo systemctl status fn-qb-proxy
      Memory: 4.8M
         CPU: 765ms
      CGroup: /system.slice/fn-qb-proxy.service
-             └─1325579 /usr/local/bin/fn-qb-proxy -f /home/admin/qb-proxy
+             └─1325579 /usr/local/bin/fn-qb-proxy -psd /home/admin/qb-proxy
 
 Apr 18 14:37:48 fn systemd[1]: Started fn-qb-proxy.service - fnOS qBittorrent Password Service.
 Apr 18 14:37:48 fn fn-qb-proxy[1325579]: 2025/04/18 14:37:48 Starting qb password finder...
@@ -109,7 +113,17 @@ fn-qb-http 服务主要实现两类 Unix Socket 到 HTTP 服务的转换，具�
       ps aux | grep [q]bittorrent-nox
       ```
 
+### 参数与环境变量
+
+fn-qb-http 支持以下命令行参数（均可通过环境变量配置，Docker 部署时推荐使用环境变量）：
+
+| 参数 | 别名 | 默认值 | 环境变量 | 说明 |
+| ---- | ---- | ------ | -------- | ---- |
+| `--uds` | - | qBittorrent 原生 UDS 路径 | `UDS` | 要代理的 Unix Socket 路径 |
+| `--port` | `-p` | `18080` | `PORT` | HTTP 监听端口 |
+| `--password` | - | 空 | `PASSWORD` | 登录密码；为空时接受任意密码（宽松校验） |
+| `--debug` | `-d` | `false` | `DEBUG` | 开启调试日志 |
+
 ### 部署方式
 
 部署配置可直接参考项目内的 [docker-compose.yml](docker-compose.yml) 文件，按文件内的示例配置进行环境搭建即可。
-
