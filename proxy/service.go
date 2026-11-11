@@ -66,6 +66,10 @@ func installService(c *cli.Context) error {
 	}
 	logrus.Infof("Executable copied to %s", targetPath)
 
+	if err := installQBWrapper(); err != nil {
+		return fmt.Errorf("install qBittorrent wrapper: %w", err)
+	}
+
 	// 构建systemd服务文件内容（使用复制后的路径）
 
 	serviceContent := fmt.Sprintf(systemdTemplate, targetPath)
@@ -91,6 +95,10 @@ func installService(c *cli.Context) error {
 }
 
 func uninstallService(c *cli.Context) error {
+	if err := uninstallQBWrapper(); err != nil {
+		return fmt.Errorf("restore qBittorrent launcher: %w", err)
+	}
+
 	// 停止服务
 	exec.Command("systemctl", "stop", serviceName).Run()
 

@@ -181,6 +181,7 @@ func findQbUser(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
+			ensureQBWrapper()
 			if err := doFindQbUser(); err != nil {
 				logrus.Errorf("Failed to fetch qb credentials: %v", err)
 			}
