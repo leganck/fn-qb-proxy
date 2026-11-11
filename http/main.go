@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/leganck/fn-qb-proxy/errpage"
 	"github.com/leganck/fn-qb-proxy/sigctx"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
@@ -26,6 +27,7 @@ func httpCmd(cliCtx *cli.Context) error {
 	uds := cliCtx.String("uds")
 	port := cliCtx.Int("port")
 	authPassword := cliCtx.String("password")
+	errorPageFile := cliCtx.String("error-page")
 	debug := cliCtx.Bool("debug")
 
 	// 新增：根据debug标志设置logrus日志级别
@@ -39,7 +41,7 @@ func httpCmd(cliCtx *cli.Context) error {
 	// 替换：使用logrus.Info输出服务启动信息
 	logrus.Infof("http running on port %d", port)
 
-	proxy := proxy(uds, authPassword)
+	proxy := proxy(uds, authPassword, errorPageFile)
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: &proxy,
@@ -56,7 +58,7 @@ func httpCmd(cliCtx *cli.Context) error {
 	return nil
 }
 
-func proxy(uds string, authPassword string) httputil.ReverseProxy {
+func proxy(uds string, authPassword string, errorPageFile string) httputil.ReverseProxy {
 
 	proxy := httputil.ReverseProxy{
 		Transport: &http.Transport{
@@ -114,6 +116,7 @@ func proxy(uds string, authPassword string) httputil.ReverseProxy {
 			r.Out.Header.Del("Origin")
 			r.Out.Body = io.NopCloser(bytes.NewBuffer(body))
 		},
+		ErrorHandler: errpage.Handler(errorPageFile),
 	}
 	return proxy
 }
@@ -158,6 +161,12 @@ func main() {
 				Usage:   "if not set, any password will be accepted",
 				Value:   "",
 				EnvVars: []string{"PASSWORD"},
+			},
+			&cli.StringFlag{
+				Name:    "error-page",
+				Usage:   "custom HTML error page file path, empty for built-in page",
+				Value:   "",
+				EnvVars: []string{"ERROR_PAGE"},
 			},
 		},
 	}

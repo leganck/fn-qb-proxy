@@ -123,6 +123,7 @@ fn-qb-http 支持以下命令行参数（均可通过环境变量配置，Docker
 | `--port` | `-p` | `18080` | `PORT` | HTTP 监听端口 |
 | `--password` | - | 空 | `PASSWORD` | 登录密码；为空时接受任意密码（宽松校验） |
 | `--debug` | `-d` | `false` | `DEBUG` | 开启调试日志 |
+| `--error-page` | - | 空 | `ERROR_PAGE` | 自定义 502 错误页面（HTML 文件路径）；为空使用内置页面 |
 
 ### 部署方式
 

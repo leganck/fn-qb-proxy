@@ -14,21 +14,24 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leganck/fn-qb-proxy/errpage"
 	"github.com/sirupsen/logrus"
 )
 
 const (
-	loginAPIPath         = "/api/v2/auth/login"
-	logoutAPIPath        = "/api/v2/auth/logout"
+	loginAPIPath          = "/api/v2/auth/login"
+	logoutAPIPath         = "/api/v2/auth/logout"
 	setPreferencesAPIPath = "/api/v2/app/setPreferences"
-	eventTypeAdd         = "add"
-	eventTypeRemove      = "remove"
+	eventTypeAdd          = "add"
+	eventTypeRemove       = "remove"
 )
 
 // 添加用户服务器映射和同步锁
 var (
 	userServers = make(map[string]*http.Server)
 	serverMutex sync.Mutex
+	// 自定义错误页面文件路径（--error-page），为空使用内置页面
+	errorPageFile string
 	// 用户变更事件通道
 	userEvents = make(chan UserEvent, 10)
 )
@@ -102,6 +105,7 @@ func createProxy(username string) *httputil.ReverseProxy {
 			r.Out.Header.Del("Origin")
 			r.Out.Body = io.NopCloser(bytes.NewBuffer(body))
 		},
+		ErrorHandler: errpage.Handler(errorPageFile),
 	}
 }
 

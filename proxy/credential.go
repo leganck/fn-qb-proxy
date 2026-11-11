@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"os/user"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -23,9 +26,27 @@ var (
 )
 
 var (
-	pwdRe  = regexp.MustCompile(`--webui-password=(\S+)`)
 	sockRe = regexp.MustCompile(`--webui-sock-path=(\S+)`)
 )
+
+const passwordDir = "/usr/trim/var/downloadcenter"
+
+func readPasswordFile(username string) (string, error) {
+	account, err := user.Lookup(username)
+	if err != nil {
+		return "", fmt.Errorf("lookup user %s: %w", username, err)
+	}
+	path := filepath.Join(passwordDir, account.Uid, "qb-proxy", "password")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	password := strings.TrimRight(string(data), "\r\n")
+	if password == "" || strings.Trim(password, "*") == "" {
+		return "", fmt.Errorf("password file %s is empty or masked", path)
+	}
+	return password, nil
+}
 
 func doFindQbUser() error {
 	// 使用pgrep查找所有匹配的进程ID
@@ -83,12 +104,11 @@ func doFindQbUser() error {
 			continue
 		}
 
-		pwdMatches := pwdRe.FindStringSubmatch(cmdLine)
-		if len(pwdMatches) < 2 {
-			logrus.Warnf("PID %s: no --webui-password found", pid)
+		pwd, err := readPasswordFile(username)
+		if err != nil {
+			logrus.Warnf("PID %s: no usable password file for user %s: %v", pid, username, err)
 			continue
 		}
-		pwd := pwdMatches[1]
 
 		sockMatches := sockRe.FindStringSubmatch(cmdLine)
 		if len(sockMatches) < 2 {

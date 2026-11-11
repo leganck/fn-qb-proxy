@@ -12,6 +12,7 @@ import (
 const DEBUG = "debug"
 const SOCKET_PERM = "socket-perm"
 const PROXY_SOCKET_DIR = "proxy-socket-dir"
+const ERROR_PAGE = "error-page"
 
 var socketPerm os.FileMode
 var proxySocketDir string
@@ -41,6 +42,9 @@ func proxySocket(ctlCtx *cli.Context) error {
 		logrus.Fatalf("Failed to create socket directory: %v", err)
 	}
 	logrus.Infof("Proxy socket directory: %s", proxySocketDir)
+
+	// 自定义错误页面文件路径
+	errorPageFile = ctlCtx.String(ERROR_PAGE)
 
 	// 创建带取消功能的上下文来处理终止信号
 	ctx, cancel := sigctx.SignalContext()
@@ -85,6 +89,12 @@ func main() {
 				Value:   "/run/fn-qb-proxy",
 				Aliases: []string{"psd"},
 				EnvVars: []string{"PROXY_SOCKET_DIR"},
+			},
+			&cli.StringFlag{
+				Name:    ERROR_PAGE,
+				Usage:   "Custom HTML error page file path, empty for built-in page",
+				Value:   "",
+				EnvVars: []string{"ERROR_PAGE"},
 			},
 		},
 		// 添加service子命令
